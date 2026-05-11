@@ -21,5 +21,6 @@ MAX_EXPOSURE_PCT   = 0.25   # max % kapitału zaangażowanego w otwarte CPS łą
 TARGET_DELTA       = 0.20   # docelowa delta short puta (wartość absolutna)
 DELTA_TOLERANCE    = 0.07   # max odchylenie od TARGET_DELTA
 MIN_OPEN_INTEREST  = 100    # minimalny Open Interest kontraktu
+MIN_SPREAD_WIDTH   = 5      # minimalna akceptowana szerokość spreadu w USD
 MAX_BID_ASK_SPREAD = 0.50   # max spread Bid-Ask na nodze (USD)
 DELTA_SL_THRESHOLD = 0.50   # zamknij gdy |delta short puta| >= tej wartości

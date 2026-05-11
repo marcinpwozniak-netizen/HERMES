@@ -19,8 +19,8 @@ class HermesCPSSignal(QCAlgorithm):
     # ------------------------------------------------------------------ #
 
     def initialize(self):
-        self.set_start_date(2020, 1, 1)
-        self.set_end_date(2022, 1, 1)
+        self.set_start_date(2015, 1, 1)
+        self.set_end_date(2026, 1, 1)
         self.set_cash(100_000)
         self.set_warm_up(300, Resolution.DAILY)
         self.set_brokerage_model(BrokerageName.INTERACTIVE_BROKERS_BROKERAGE, AccountType.MARGIN)
@@ -222,6 +222,10 @@ class HermesCPSSignal(QCAlgorithm):
 
         # Actual spread width (may differ from config.SPREAD_WIDTH if exact strike unavailable)
         actual_spread_width = short_strike - long_strike
+
+        if actual_spread_width < config.MIN_SPREAD_WIDTH:
+            self.debug(f"[{ticker}] Spread too narrow: {actual_spread_width} < {config.MIN_SPREAD_WIDTH}, skipping")
+            return False
 
         # Position sizing based on actual spread width
         spread_dollars = actual_spread_width * 100

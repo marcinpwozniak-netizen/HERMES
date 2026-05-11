@@ -3,9 +3,9 @@ INSTRUMENT = "options"  # "equity" lub "options"
 
 # Universe
 TICKERS = [
-    "SPY", "GLD",
-    "KO", "XOM",
-    "JNJ","LMT", "HON", "LLY", "V"
+    "SPY" #, "GLD",
+#    "KO", "XOM",
+#    "JNJ","LMT", "HON", "LLY", "V"
 ]
 
 # Wspólne

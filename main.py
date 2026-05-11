@@ -368,11 +368,10 @@ class HermesCPSSignal(QCAlgorithm):
                 except Exception:
                     pass
 
-        # Close spread as a unit (negative quantity = closing a long BullPutSpread)
-        bull_put = OptionStrategies.bull_put_spread(
-            pos["contract"], pos["strike_short"], pos["strike_long"], pos["expiry"]
-        )
-        self.buy(bull_put, -pos["n_spreads"])
+        for leg in ("short_symbol", "long_symbol"):
+            sym = pos.get(leg)
+            if sym is not None:
+                self.liquidate(sym)
 
         pct_of_premium = (
             current_pnl / abs(premium_collected) * 100.0 if premium_collected != 0 else 0.0

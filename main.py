@@ -44,7 +44,14 @@ class HermesCPSSignal(QCAlgorithm):
 
             if config.INSTRUMENT == "options" and ticker in config.TICKERS:
                 option = self.add_option(ticker, Resolution.DAILY)
-                option.set_filter(-20, 0, timedelta(10), timedelta(60))
+                option.price_model = OptionPriceModels.binomial_cox_ross_rubinstein()
+                option.set_filter(lambda u: u.puts_only()
+                    .delta(
+                        -(config.TARGET_DELTA + config.DELTA_TOLERANCE),
+                        -(config.TARGET_DELTA - config.DELTA_TOLERANCE)
+                    )
+                    .expiration(10, 60)
+                )
                 self.option_symbols[ticker] = option.symbol
                 self.open_options[ticker] = self._empty_options_pos()
                 self.pending_open[ticker] = False
@@ -179,38 +186,39 @@ class HermesCPSSignal(QCAlgorithm):
         actual_dte = (best_expiry - self.time).days
 
         expiry_puts = [c for c in puts if c.expiry == best_expiry]
-        strikes = sorted(set(c.strike for c in expiry_puts))
 
-        # Short strike: largest <= signal_price, then back by STRIKE_OFFSET
-        eligible = [s for s in strikes if s <= signal_price]
-        if not eligible:
-            self.debug(f"[{ticker}] No eligible short strike <= {signal_price:.2f}")
+        # Filter by liquidity and Greeks availability
+        liquid_puts = [
+            c for c in expiry_puts
+            if c.greeks is not None
+            and c.greeks.delta is not None
+            and c.bid_price > 0 and c.ask_price > 0
+            and (c.ask_price - c.bid_price) <= config.MAX_BID_ASK_SPREAD
+            and c.open_interest >= config.MIN_OPEN_INTEREST
+        ]
+
+        if not liquid_puts:
+            self.debug(f"[{ticker}] No liquid puts with Greeks for {best_expiry.date()}")
             return False
 
-        short_idx = len(eligible) - 1 - config.STRIKE_OFFSET
-        if short_idx < 0:
-            self.debug(f"[{ticker}] STRIKE_OFFSET exceeds available strikes")
+        # Short strike: contract with delta closest to -TARGET_DELTA
+        short_c = min(liquid_puts, key=lambda c: abs(abs(c.greeks.delta) - config.TARGET_DELTA))
+        actual_delta = abs(short_c.greeks.delta)
+
+        if abs(actual_delta - config.TARGET_DELTA) > config.DELTA_TOLERANCE:
+            self.debug(f"[{ticker}] No contract within delta tolerance (closest: {actual_delta:.3f})")
             return False
 
-        short_strike = eligible[short_idx]
+        short_strike = short_c.strike
 
-        # Long strike: closest available below short_strike to (short - SPREAD_WIDTH)
-        below_short = [s for s in strikes if s < short_strike]
-        if not below_short:
-            self.debug(f"[{ticker}] No strikes below {short_strike}")
+        # Long strike: closest liquid contract below short_strike to (short - SPREAD_WIDTH)
+        liquid_below = [c for c in liquid_puts if c.strike < short_strike]
+        if not liquid_below:
+            self.debug(f"[{ticker}] No liquid strikes below {short_strike}")
             return False
 
-        long_strike = min(below_short, key=lambda s: abs(s - (short_strike - config.SPREAD_WIDTH)))
-
-        def get_contract(strike):
-            cs = [c for c in expiry_puts if c.strike == strike]
-            return cs[0] if cs else None
-
-        short_c = get_contract(short_strike)
-        long_c = get_contract(long_strike)
-        if short_c is None or long_c is None:
-            self.debug(f"[{ticker}] Contracts missing for {short_strike}/{long_strike}")
-            return False
+        long_c = min(liquid_below, key=lambda c: abs(c.strike - (short_strike - config.SPREAD_WIDTH)))
+        long_strike = long_c.strike
 
         # Actual spread width (may differ from config.SPREAD_WIDTH if exact strike unavailable)
         actual_spread_width = short_strike - long_strike
@@ -280,6 +288,7 @@ class HermesCPSSignal(QCAlgorithm):
         self.debug(
             f"[{ticker}] CPS opened: {short_strike}/{long_strike} "
             f"spread={actual_spread_width} (target={config.SPREAD_WIDTH}) "
+            f"delta={actual_delta:.3f} "
             f"exp={best_expiry.date()} DTE={actual_dte} "
             f"prem=${premium_collected:.2f} x{n_spreads} "
             f"[exposure ${current_exposure + n_spreads * spread_dollars:.0f}/{max_exposure:.0f}]"
@@ -318,6 +327,18 @@ class HermesCPSSignal(QCAlgorithm):
             current_pnl / abs(premium_collected) * 100.0 if premium_collected != 0 else 0.0
         )
 
+        # Delta-based SL: zamknij gdy short put zbliża się do ATM
+        delta_sl_triggered = False
+        if self._current_data is not None:
+            option_sym = pos.get("contract")
+            short_sym = pos.get("short_symbol")
+            if option_sym and short_sym and option_sym in self._current_data.option_chains:
+                chain = self._current_data.option_chains[option_sym]
+                short_contract = next((c for c in chain if c.symbol == short_sym), None)
+                if short_contract and short_contract.greeks is not None:
+                    if abs(short_contract.greeks.delta) >= config.DELTA_SL_THRESHOLD:
+                        delta_sl_triggered = True
+
         close_reason = None
         if days_to_expiry <= 0:
             close_reason = "EXPIRY"
@@ -325,6 +346,8 @@ class HermesCPSSignal(QCAlgorithm):
             close_reason = "DTE"
         elif config.TP_PCT > 0 and pct_of_premium >= config.TP_PCT:
             close_reason = "TP"
+        elif delta_sl_triggered:
+            close_reason = "DELTA_SL"
         elif config.SL_PCT > 0 and current_pnl <= -(abs(premium_collected) * config.SL_PCT / 100.0):
             close_reason = "SL"
 
@@ -335,17 +358,21 @@ class HermesCPSSignal(QCAlgorithm):
         pos = self.open_options[ticker]
         premium_collected = pos["premium_collected"] or 0.0
 
+        # Capture current P&L before submitting the closing order
         current_pnl = 0.0
         for leg in ("short_symbol", "long_symbol"):
             sym = pos.get(leg)
             if sym is not None:
                 try:
                     current_pnl += float(self.portfolio[sym].unrealized_profit)
-                    qty = int(self.portfolio[sym].quantity)
-                    if qty != 0:
-                        self.market_order(sym, -qty)
                 except Exception:
                     pass
+
+        # Close spread as a unit (negative quantity = closing a long BullPutSpread)
+        bull_put = OptionStrategies.bull_put_spread(
+            pos["contract"], pos["strike_short"], pos["strike_long"], pos["expiry"]
+        )
+        self.buy(bull_put, -pos["n_spreads"])
 
         pct_of_premium = (
             current_pnl / abs(premium_collected) * 100.0 if premium_collected != 0 else 0.0
@@ -517,7 +544,7 @@ class HermesCPSSignal(QCAlgorithm):
                 pf_str = f"{pf_val:.2f}"
 
             tp_c  = sum(1 for t in trades if t["close_reason"] == "TP")
-            sl_c  = sum(1 for t in trades if t["close_reason"] == "SL")
+            sl_c  = sum(1 for t in trades if t["close_reason"] in ("SL", "DELTA_SL"))
             dte_c = sum(1 for t in trades if t["close_reason"] == "DTE")
             exp_c = sum(1 for t in trades if t["close_reason"] in ("EXPIRY", "EOA"))
 

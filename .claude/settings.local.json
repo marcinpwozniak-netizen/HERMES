@@ -9,7 +9,9 @@
       "Bash(git branch *)",
       "Bash(git push *)",
       "Bash(gh auth *)",
-      "WebFetch(domain:www.quantconnect.com)"
+      "WebFetch(domain:www.quantconnect.com)",
+      "Bash(python -m py_compile main.py config.py)",
+      "Bash(python3 -m py_compile main.py config.py)"
     ],
     "additionalDirectories": [
       "/home/marcin/tradingo-workspace/hermes-cps-signal"

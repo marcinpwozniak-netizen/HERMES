@@ -1,0 +1,9 @@
+Storage/
+backtests/
+live/
+*.pyc
+__pycache__/
+.DS_Store
+*.log
+/Results/
+config.json

@@ -3,10 +3,10 @@ INSTRUMENT = "options"  # "equity" lub "options"
 
 # Universe
 TICKERS = [
-   # "QQQ" #, "GLD",
-"SPY", "QQQ", "XLK"  # IWM i GLD do wyrzucenia
+ # "QQQ" #, "GLD",
+ "SPY", "QQQ", "XLK"  # IWM i GLD do wyrzucenia
 
-  # "SPY", "QQQ","IWM", "XLF", "XLE", "XLK", "GLD"
+ # "SPY", "QQQ","IWM", "XLF", "XLE", "XLK", "GLD"
  #   "KO", "XOM",
  #   "JNJ","LMT", "HON", "LLY", "V"
 ]

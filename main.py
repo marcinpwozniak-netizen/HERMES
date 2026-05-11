@@ -161,8 +161,7 @@ class HermesCPSSignal(QCAlgorithm):
                     if days_pending > config.PENDING_OPEN_TIMEOUT_DAYS:
                         self.debug(f"[{ticker}] Signal expired after {days_pending}d, cancelling")
                         self.pending_open[ticker] = False
-                        continue
-                    if self._open_cps(ticker, self.pending_signal_price[ticker]):
+                    elif self._open_cps(ticker, self.pending_signal_price[ticker]):
                         self.pending_open[ticker] = False
 
                 if self.open_options[ticker]["contract"] is not None:

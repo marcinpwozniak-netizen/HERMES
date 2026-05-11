@@ -31,6 +31,7 @@ class HermesCPSSignal(QCAlgorithm):
         self.open_options = {}            # ticker → open CPS position data
         self.pending_open = {}            # ticker → True when LONG signal awaits execution
         self.pending_signal_price = {}    # ticker → close price at signal time
+        self.pending_open_date = {}       # ticker → datetime when signal was set
         self._current_data = None
 
         # FB subscribed only in equity mode for extended META pre-rename history
@@ -56,6 +57,7 @@ class HermesCPSSignal(QCAlgorithm):
                 self.open_options[ticker] = self._empty_options_pos()
                 self.pending_open[ticker] = False
                 self.pending_signal_price[ticker] = 0.0
+                self.pending_open_date[ticker] = None
 
             self.consolidate(ticker, timedelta(days=7), self.on_weekly_bar)
             self.signals[ticker] = DedalSignalGenerator(ticker)
@@ -137,6 +139,7 @@ class HermesCPSSignal(QCAlgorithm):
         if signal == "LONG" and not has_open and not self.pending_open[ticker]:
             self.pending_open[ticker] = True
             self.pending_signal_price[ticker] = close
+            self.pending_open_date[ticker] = self.time
         elif signal == "EXIT":
             if self.pending_open[ticker]:
                 self.pending_open[ticker] = False
@@ -154,6 +157,11 @@ class HermesCPSSignal(QCAlgorithm):
         for ticker in config.TICKERS:
             try:
                 if self.pending_open.get(ticker, False):
+                    days_pending = (self.time - self.pending_open_date[ticker]).days
+                    if days_pending > config.PENDING_OPEN_TIMEOUT_DAYS:
+                        self.debug(f"[{ticker}] Signal expired after {days_pending}d, cancelling")
+                        self.pending_open[ticker] = False
+                        continue
                     if self._open_cps(ticker, self.pending_signal_price[ticker]):
                         self.pending_open[ticker] = False
 

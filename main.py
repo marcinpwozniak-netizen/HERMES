@@ -357,8 +357,8 @@ class HermesCPSSignal(QCAlgorithm):
             close_reason = "DTE"
         elif config.TP_PCT > 0 and pct_of_premium >= config.TP_PCT:
             close_reason = "TP"
-        elif delta_sl_triggered:
-            close_reason = "DELTA_SL"
+        elif config.SL_PCT > 0 and delta_sl_triggered:
+            close_reason = "DELTA_SL"  # FIX HER-33: skip delta SL when SL_PCT=0
         elif config.SL_PCT > 0 and current_pnl <= -(abs(premium_collected) * config.SL_PCT / 100.0):
             close_reason = "SL"
 
@@ -379,10 +379,26 @@ class HermesCPSSignal(QCAlgorithm):
                 except Exception:
                     pass
 
-        for leg in ("short_symbol", "long_symbol"):
-            sym = pos.get(leg)
-            if sym is not None:
-                self.liquidate(sym)
+        # Close as combo order — both legs atomically (FIX HER-33)
+        try:
+            bull_put = OptionStrategies.bull_put_spread(
+                pos["contract"],
+                pos["strike_short"],
+                pos["strike_long"],
+                pos["expiry"]
+            )
+            self.sell(bull_put, pos["n_spreads"])
+        except Exception as e:
+            self.debug(f"[{ticker}] Combo close failed, falling back to leg-by-leg: {e}")
+            for leg in ("short_symbol", "long_symbol"):
+                sym = pos.get(leg)
+                if sym is not None:
+                    try:
+                        qty = int(self.portfolio[sym].quantity)
+                        if qty != 0:
+                            self.market_order(sym, -qty)
+                    except Exception:
+                        pass
 
         pct_of_premium = (
             current_pnl / abs(premium_collected) * 100.0 if premium_collected != 0 else 0.0

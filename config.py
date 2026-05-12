@@ -2,17 +2,10 @@
 INSTRUMENT = "options"  # "equity" lub "options"
 
 # Universe
-TICKERS = [
- # "QQQ" #, "GLD",
- "SPY", "QQQ", "XLK"  # IWM i GLD do wyrzucenia
-
- # "SPY", "QQQ","IWM", "XLF", "XLE", "XLK", "GLD"
- #   "KO", "XOM",
- #   "JNJ","LMT", "HON", "LLY", "V"
-]
+TICKERS = ["SPY", "QQQ"]
 
 # Wspólne
-POSITION_SIZE_PCT = 0.03      # % kapitału na jedną pozycję
+POSITION_SIZE_PCT = 0.05      # % kapitału na jedną pozycję
 
 # Parametry opcyjne (używane tylko gdy INSTRUMENT="options")
 DTE_TARGET    = 45            # docelowe DTE przy otwarciu
@@ -20,8 +13,8 @@ CLOSE_DTE     = 7             # zamknij gdy DTE spadnie poniżej tej wartości
 SPREAD_WIDTH       = 10     # szerokość spreada w dolarach (strike distance)
 TP_PCT             = 50     # Take Profit jako % pobranej premii (0 = off)
 SL_PCT             = 200    # Stop Loss jako % pobranej premii (0 = off)
-MAX_EXPOSURE_PCT   = 0.4   # max % kapitału zaangażowanego w otwarte CPS łącznie
-TARGET_DELTA       = 0.2    # docelowa delta short puta (wartość absolutna)
+MAX_EXPOSURE_PCT   = 0.15   # max % kapitału zaangażowanego w otwarte CPS łącznie
+TARGET_DELTA       = 0.40    # docelowa delta short puta (wartość absolutna)
 DELTA_TOLERANCE    = 0.07   # max odchylenie od TARGET_DELTA
 MIN_OPEN_INTEREST  = 100    # minimalny Open Interest kontraktu
 MIN_SPREAD_WIDTH   = 5      # minimalna akceptowana szerokość spreadu w USD

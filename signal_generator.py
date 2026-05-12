@@ -64,9 +64,9 @@ class DedalSignalGenerator:
         d = self._current_d
 
         efi_cross_up = self._crossover(efi, self._prev_efi, smma, self._prev_smma)
-        k_cross_down = self._crossunder(k, self._prev_k, d, self._prev_d)
+        k_cross_up = self._crossover(k, self._prev_k, d, self._prev_d)  # FIX HER-31
 
-        is_long = (efi_cross_up or (efi > smma and k_cross_down)) and not self.impulse.is_red
+        is_long = (efi_cross_up or (efi > smma and k_cross_up)) and not self.impulse.is_red
 
         d_cross_up = self._crossover(d, self._prev_d, k, self._prev_k)
         efi_cross_down = self._crossunder(efi, self._prev_efi, smma, self._prev_smma)

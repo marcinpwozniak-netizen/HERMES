@@ -11,10 +11,10 @@ class ElderImpulse(PythonIndicator):
     - blue:  otherwise
     """
 
-    def __init__(self, indicator_name):
+    def __init__(self, indicator_name, ema_trend_period=13):
         self.name = indicator_name
 
-        self._ema13 = self._make_ema(13)
+        self._ema13 = self._make_ema(ema_trend_period)
         self._ema12 = self._make_ema(12)
         self._ema26 = self._make_ema(26)
         self._ema_signal = self._make_ema(9)
@@ -26,7 +26,7 @@ class ElderImpulse(PythonIndicator):
         self.color = "blue"
         self.is_red = False
         self.value = 0.0
-        self.warm_up_period = 35
+        self.warm_up_period = max(ema_trend_period, 26) + 9 + 5
 
     def _make_ema(self, period):
         return {"alpha": 2.0 / (period + 1), "value": None, "period": period, "count": 0}

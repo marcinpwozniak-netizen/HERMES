@@ -1,5 +1,6 @@
 from AlgorithmImports import *
 from indicators import ElderForceIndex, StochRSI, ElderImpulse
+import config
 
 
 class DedalSignalGenerator:
@@ -8,10 +9,21 @@ class DedalSignalGenerator:
     combining Elder Force Index, Stochastic RSI, and Elder Impulse.
     """
 
-    def __init__(self, ticker):
-        self.efi = ElderForceIndex(f"{ticker}_EFI")
-        self.stoch_rsi = StochRSI(f"{ticker}_SRSI")
-        self.impulse = ElderImpulse(f"{ticker}_IMPULSE")
+    def __init__(self, ticker,
+                 efi_period=23, efi_smma_period=10,
+                 impulse_ema_period=13,
+                 stoch_rsi_period=13, stoch_period=8,
+                 stoch_smooth_k=5, stoch_smooth_d=5):
+        self.efi = ElderForceIndex(f"{ticker}_EFI",
+                                   efi_period=efi_period,
+                                   smma_period=efi_smma_period)
+        self.stoch_rsi = StochRSI(f"{ticker}_SRSI",
+                                  rsi_period=stoch_rsi_period,
+                                  stoch_period=stoch_period,
+                                  smooth_k=stoch_smooth_k,
+                                  smooth_d=stoch_smooth_d)
+        self.impulse = ElderImpulse(f"{ticker}_IMPULSE",
+                                    ema_trend_period=impulse_ema_period)
 
         self._prev_efi = None
         self._prev_smma = None

@@ -1,24 +1,43 @@
-# Tryb instrumentu
-INSTRUMENT = "options"  # "equity" lub "options"
+SIGNAL_INTERVAL = "daily"       # "weekly" | "daily"
 
-# Universe
-TICKERS = ["SPY"]
+# Universe & instrument
+INSTRUMENT  = "options"
+TICKERS     = ["SPY"]
 
-# Wspólne
-POSITION_SIZE_PCT = 0.15      # % kapitału na jedną pozycję
+# Position sizing
+POSITION_SIZE_PCT = 0.10        # 10% — spread is narrow, can go slightly larger
 
-# Parametry opcyjne (używane tylko gdy INSTRUMENT="options")
-DTE_TARGET    = 45            # docelowe DTE przy otwarciu
-CLOSE_DTE     = 7             # zamknij gdy DTE spadnie poniżej tej wartości
-SPREAD_WIDTH       = 25     # szerokość spreada w dolarach (strike distance)
-TP_PCT             = 50     # Take Profit jako % pobranej premii (0 = off)
-SL_PCT             = 400    # Stop Loss jako % pobranej premii (0 = off)
-MAX_EXPOSURE_PCT   = 0.45   # max % kapitału zaangażowanego w otwarte CPS łącznie
-TARGET_DELTA       = 0.15    # docelowa delta short puta (wartość absolutna)
-DELTA_TOLERANCE    = 0.07   # max odchylenie od TARGET_DELTA
-MIN_OPEN_INTEREST  = 100    # minimalny Open Interest kontraktu
-MIN_SPREAD_WIDTH   = 5      # minimalna akceptowana szerokość spreadu w USD
-MAX_BID_ASK_SPREAD = 0.50   # max spread Bid-Ask na nodze (USD)
-DELTA_SL_THRESHOLD = 0.50   # zamknij gdy |delta short puta| >= tej wartości
-PENDING_OPEN_TIMEOUT_DAYS = 3  # anuluj pending sygnał po tylu dniach bez wykonania
-SIGNAL_INTERVAL = "weekly"   # "weekly" | "daily"
+# Options — short-term setup (4-7 DTE)
+DTE_TARGET    = 4               # target DTE at open; also test 7
+CLOSE_DTE     = 0               # hold to expiry; no early exit by DTE
+SPREAD_WIDTH  = 5               # $5 wide — hard cap on max loss per contract
+TP_PCT        = 80              # take profit at 80% premium collected
+SL_PCT        = 0               # disabled — $5 spread IS the stop loss
+MAX_EXPOSURE_PCT = 0.45
+
+# Greeks
+TARGET_DELTA       = 0.30       # more aggressive than 45-DTE setup
+DELTA_TOLERANCE    = 0.10
+DELTA_SL_THRESHOLD = 1.0        # effectively disabled (delta never reaches 1.0)
+
+# Liquidity filters
+MIN_OPEN_INTEREST  = 100
+MIN_SPREAD_WIDTH   = 2          # narrower floor for 5-wide spreads
+MAX_BID_ASK_SPREAD = 0.30       # tighter — short DTE options are liquid on SPY
+
+# Signal expiry (daily mode: don't wait more than 1 day for a fill)
+PENDING_OPEN_TIMEOUT_DAYS = 1
+
+# Option chain filter DTE range
+OPTION_FILTER_MIN_DTE = 2       # was 10 — need to see 4 DTE expiries
+OPTION_FILTER_MAX_DTE = 14      # was 60 — no need for long-dated chains
+
+# ── Fast Dedal indicator periods (daily mode) ──────────────────────────
+# Weekly defaults shown in comments for reference
+EFI_PERIOD        = 2           # Elder Force Index SMA period  (weekly: 23)
+EFI_SMMA_PERIOD   = 3           # EFI Wilder smoothing period   (weekly: 10)
+IMPULSE_EMA_PERIOD = 5          # Elder Impulse trend EMA       (weekly: 13)
+STOCH_RSI_PERIOD  = 14          # StochRSI — RSI period         (weekly: 13)
+STOCH_PERIOD      = 14          # StochRSI — stoch period       (weekly: 8)
+STOCH_SMOOTH_K    = 3           # StochRSI — K smooth           (weekly: 5)
+STOCH_SMOOTH_D    = 3           # StochRSI — D smooth           (weekly: 5)

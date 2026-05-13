@@ -51,7 +51,7 @@ class HermesCPSSignal(QCAlgorithm):
                         -(config.TARGET_DELTA + config.DELTA_TOLERANCE),
                         -(config.TARGET_DELTA - config.DELTA_TOLERANCE)
                     )
-                    .expiration(10, 60)
+                    .expiration(config.OPTION_FILTER_MIN_DTE, config.OPTION_FILTER_MAX_DTE)
                 )
                 self.option_symbols[ticker] = option.symbol
                 self.open_options[ticker] = self._empty_options_pos()
@@ -63,7 +63,16 @@ class HermesCPSSignal(QCAlgorithm):
                 self.consolidate(ticker, timedelta(days=1), self.on_signal_bar)
             else:
                 self.consolidate(ticker, timedelta(days=7), self.on_signal_bar)
-            self.signals[ticker] = DedalSignalGenerator(ticker)
+            self.signals[ticker] = DedalSignalGenerator(
+                ticker,
+                efi_period=config.EFI_PERIOD,
+                efi_smma_period=config.EFI_SMMA_PERIOD,
+                impulse_ema_period=config.IMPULSE_EMA_PERIOD,
+                stoch_rsi_period=config.STOCH_RSI_PERIOD,
+                stoch_period=config.STOCH_PERIOD,
+                stoch_smooth_k=config.STOCH_SMOOTH_K,
+                stoch_smooth_d=config.STOCH_SMOOTH_D,
+            )
 
             stats_key = "META" if ticker == "FB" else ticker
             if stats_key not in self.trade_stats:
@@ -143,6 +152,14 @@ class HermesCPSSignal(QCAlgorithm):
             self.pending_open[ticker] = True
             self.pending_signal_price[ticker] = close
             self.pending_open_date[ticker] = self.time
+
+            # Daily mode: attempt same-bar open to eliminate 24h lag.
+            # on_signal_bar fires as a consolidator callback inside on_data,
+            # so self._current_data already contains today's chain snapshot.
+            if config.SIGNAL_INTERVAL == "daily" and self._current_data is not None:
+                if self._open_cps(ticker, close):
+                    self.pending_open[ticker] = False
+
         elif signal == "EXIT":
             if self.pending_open[ticker]:
                 self.pending_open[ticker] = False

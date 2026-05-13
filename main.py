@@ -33,6 +33,9 @@ class HermesCPSSignal(QCAlgorithm):
         self.pending_signal_price = {}    # ticker → close price at signal time
         self.pending_open_date = {}       # ticker → datetime when signal was set
         self._current_data = None
+        self._bear_sma_window = RollingWindow[float](config.BEAR_FILTER_PERIOD)
+        self._bear_sma_ready  = False
+        self._bear_sma_value  = 0.0
 
         # FB subscribed only in equity mode for extended META pre-rename history
         subscribe = list(config.TICKERS)
@@ -157,16 +160,22 @@ class HermesCPSSignal(QCAlgorithm):
         has_open = self.open_options[ticker]["contract"] is not None
 
         if signal == "LONG" and not has_open and not self.pending_open[ticker]:
-            self.pending_open[ticker] = True
-            self.pending_signal_price[ticker] = close
-            self.pending_open_date[ticker] = self.time
+            if self._is_bear_market():
+                self.debug(
+                    f"[{ticker}] LONG signal blocked: bear market filter active "
+                    f"(spot < SMA{config.BEAR_FILTER_PERIOD} = {self._bear_sma_value:.2f})"
+                )
+            else:
+                self.pending_open[ticker] = True
+                self.pending_signal_price[ticker] = close
+                self.pending_open_date[ticker] = self.time
 
-            # Daily mode: attempt same-bar open to eliminate 24h lag.
-            # on_signal_bar fires as a consolidator callback inside on_data,
-            # so self._current_data already contains today's chain snapshot.
-            if config.SIGNAL_INTERVAL == "daily" and self._current_data is not None:
-                if self._open_cps(ticker, close):
-                    self.pending_open[ticker] = False
+                # Daily mode: attempt same-bar open to eliminate 24h lag.
+                # on_signal_bar fires as a consolidator callback inside on_data,
+                # so self._current_data already contains today's chain snapshot.
+                if config.SIGNAL_INTERVAL == "daily" and self._current_data is not None:
+                    if self._open_cps(ticker, close):
+                        self.pending_open[ticker] = False
 
         elif signal == "EXIT":
             if self.pending_open[ticker]:
@@ -184,6 +193,18 @@ class HermesCPSSignal(QCAlgorithm):
             return
 
         self._current_data = data
+
+        if config.BEAR_FILTER_ENABLED and not self.is_warming_up:
+            _ref = config.TICKERS[0]
+            if self._current_data is not None and _ref in self._current_data.bars:
+                _close = float(self._current_data.bars[_ref].close)
+                self._bear_sma_window.Add(_close)
+                if self._bear_sma_window.IsReady:
+                    self._bear_sma_ready = True
+                    self._bear_sma_value = (
+                        sum(self._bear_sma_window[i] for i in range(config.BEAR_FILTER_PERIOD))
+                        / config.BEAR_FILTER_PERIOD
+                    )
 
         for ticker in config.TICKERS:
             try:
@@ -357,6 +378,19 @@ class HermesCPSSignal(QCAlgorithm):
                 sw = pos.get("actual_spread_width") or 0
                 total += n * sw * 100
         return total
+
+    def _is_bear_market(self):
+        """Returns True when the bear market filter is active and SPY < SMA200."""
+        if not config.BEAR_FILTER_ENABLED:
+            return False
+        if not self._bear_sma_ready:
+            return False
+        ref = config.TICKERS[0]
+        try:
+            spot = float(self.securities[ref].price)
+            return spot < self._bear_sma_value
+        except Exception:
+            return False
 
     # ------------------------------------------------------------------ #
     # Manage / close open CPS (daily)                                     #

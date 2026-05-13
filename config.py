@@ -12,7 +12,7 @@ DTE_TARGET    = 4               # target DTE at open; also test 7
 CLOSE_DTE     = 0               # hold to expiry; no early exit by DTE
 SPREAD_WIDTH  = 5               # $5 wide — hard cap on max loss per contract
 SPREAD_WIDTH_TOLERANCE = 1      # Accept spreads within ±1 of SPREAD_WIDTH (e.g. 4/5/6 for target=5)
-TP_PCT        = 80              # take profit at 80% premium collected
+TP_PCT        = 50              # take profit at 80% premium collected
 SL_PCT        = 0               # disabled — $5 spread IS the stop loss
 CLOSE_ON_EXIT = True            # Close open CPS immediately when Dedal EXIT signal fires
 MAX_EXPOSURE_PCT = 0.45
@@ -43,3 +43,7 @@ STOCH_RSI_PERIOD  = 14          # StochRSI — RSI period         (weekly: 13)
 STOCH_PERIOD      = 14          # StochRSI — stoch period       (weekly: 8)
 STOCH_SMOOTH_K    = 3           # StochRSI — K smooth           (weekly: 5)
 STOCH_SMOOTH_D    = 3           # StochRSI — D smooth           (weekly: 5)
+
+# ── Bear market filter ────────────────────────────────────────────────
+BEAR_FILTER_ENABLED = True      # Block new CPS entries when SPY < SMA(BEAR_FILTER_PERIOD)
+BEAR_FILTER_PERIOD  = 200       # SMA period in daily bars

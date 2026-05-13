@@ -59,7 +59,10 @@ class HermesCPSSignal(QCAlgorithm):
                 self.pending_signal_price[ticker] = 0.0
                 self.pending_open_date[ticker] = None
 
-            self.consolidate(ticker, timedelta(days=7), self.on_weekly_bar)
+            if config.SIGNAL_INTERVAL == "daily":
+                self.consolidate(ticker, timedelta(days=1), self.on_signal_bar)
+            else:
+                self.consolidate(ticker, timedelta(days=7), self.on_signal_bar)
             self.signals[ticker] = DedalSignalGenerator(ticker)
 
             stats_key = "META" if ticker == "FB" else ticker
@@ -86,7 +89,7 @@ class HermesCPSSignal(QCAlgorithm):
     # Weekly signal generation (both modes)                               #
     # ------------------------------------------------------------------ #
 
-    def on_weekly_bar(self, bar):
+    def on_signal_bar(self, bar):
         ticker = bar.symbol.value
         if ticker not in self.signals:
             return
@@ -113,7 +116,7 @@ class HermesCPSSignal(QCAlgorithm):
                 self._handle_options_signal(ticker, close, signal)
 
         except Exception as e:
-            self.debug(f"[{ticker}] on_weekly_bar: {e}")
+            self.debug(f"[{ticker}] on_signal_bar: {e}")
 
     def _handle_equity_signal(self, ticker, stats_key, close, signal):
         stats = self.trade_stats[stats_key]
@@ -301,7 +304,7 @@ class HermesCPSSignal(QCAlgorithm):
             f"spread={actual_spread_width} (target={config.SPREAD_WIDTH}) "
             f"delta={actual_delta:.3f} "
             f"exp={best_expiry.date()} DTE={actual_dte} "
-            f"prem=${premium_collected:.2f} x{n_spreads} "
+            f"prem=${premium_collected:.2f} risk=${max_loss:.2f} x{n_spreads} "
             f"[exposure ${current_exposure + n_spreads * spread_dollars:.0f}/{max_exposure:.0f}]"
         )
         return True
@@ -403,7 +406,8 @@ class HermesCPSSignal(QCAlgorithm):
         pct_of_premium = (
             current_pnl / abs(premium_collected) * 100.0 if premium_collected != 0 else 0.0
         )
-        self._record_cps_trade(ticker, close_reason, pct_of_premium)
+        self.debug(f"[{ticker}] CPS closed ({close_reason}): pct={pct_of_premium:.1f}% captured=${current_pnl:.2f}")
+        self._record_cps_trade(ticker, close_reason, pct_of_premium, current_pnl)
         self.open_options[ticker] = self._empty_options_pos()
 
     # ------------------------------------------------------------------ #
@@ -430,7 +434,7 @@ class HermesCPSSignal(QCAlgorithm):
         stats["open_bar"] = None
         stats["entry_date"] = None
 
-    def _record_cps_trade(self, ticker, close_reason, pct_of_premium):
+    def _record_cps_trade(self, ticker, close_reason, pct_of_premium, premium_captured=0.0):
         pos = self.open_options[ticker]
         self.trade_stats[ticker]["trades"].append({
             "entry_date":          pos["entry_date"],
@@ -443,6 +447,7 @@ class HermesCPSSignal(QCAlgorithm):
             "max_profit":          pos["max_profit"],
             "max_loss":            pos["max_loss"],
             "pct_collected":       pct_of_premium,
+            "premium_captured":    premium_captured,
             "close_reason":        close_reason,
             "win":                 pct_of_premium > 0,
         })
@@ -535,12 +540,14 @@ class HermesCPSSignal(QCAlgorithm):
         self.log("=== DEDAL CPS STATS ===")
         self.log(
             "TICKER | TRADES | WIN_RATE | AVG_PCT_COLLECTED | AVG_PREMIUM | "
-            "PF | AVG_SPREAD | TP_closes | SL_closes | DTE_closes | EXPIRY_closes"
+            "PF | AVG_SPREAD | TP_closes | SL_closes | DTE_closes | EXPIRY_closes | PCR"
         )
 
         total_trades = 0
         total_premium = 0.0
         weighted_win_rate = 0.0
+        global_collected = 0.0
+        global_captured = 0.0
         strong_tickers = []
         weak_tickers = []
 
@@ -549,7 +556,7 @@ class HermesCPSSignal(QCAlgorithm):
             n_trades = len(trades)
 
             if n_trades == 0:
-                self.log(f"{ticker} | 0 | N/A | N/A | N/A | N/A | N/A | 0 | 0 | 0 | 0")
+                self.log(f"{ticker} | 0 | N/A | N/A | N/A | N/A | N/A | 0 | 0 | 0 | 0 | N/A")
                 weak_tickers.append(ticker)
                 continue
 
@@ -574,20 +581,29 @@ class HermesCPSSignal(QCAlgorithm):
             dte_c = sum(1 for t in trades if t["close_reason"] == "DTE")
             exp_c = sum(1 for t in trades if t["close_reason"] in ("EXPIRY", "EOA"))
 
+            total_collected = sum(t.get("premium_collected") or 0 for t in trades)
+            total_captured  = sum(t.get("premium_captured")  or 0 for t in trades)
+            pcr = (total_captured / total_collected * 100.0) if total_collected != 0 else 0.0
+
             self.log(
                 f"{ticker} | {n_trades} | {win_rate:.1f}% | {avg_pct:.1f}% | "
                 f"${avg_prem:.0f} | {pf_str} | {avg_spread:.1f} | "
-                f"{tp_c} | {sl_c} | {dte_c} | {exp_c}"
+                f"{tp_c} | {sl_c} | {dte_c} | {exp_c} | {pcr:.1f}%"
             )
 
             total_trades += n_trades
-            total_premium += sum(t.get("premium_collected") or 0 for t in trades)
+            total_premium += total_collected
+            global_collected += total_collected
+            global_captured += total_captured
             weighted_win_rate += win_rate * n_trades
             (strong_tickers if pf_val >= 1.5 and n_trades >= 10 else weak_tickers).append(ticker)
 
         self.log("=== CPS SUMMARY ===")
         self.log(f"Total trades: {total_trades}")
         self.log(f"Total premium collected: ${total_premium:.2f}")
+        self.log(f"Total premium captured: ${global_captured:.2f}")
+        global_pcr = (global_captured / global_collected * 100.0) if global_collected != 0 else 0.0
+        self.log(f"Global PCR: {global_pcr:.1f}%")
         if total_trades > 0:
             self.log(f"Weighted avg win rate: {weighted_win_rate / total_trades:.1f}%")
         self.log(f"Strong tickers (PF >= 1.5 AND trades >= 10): {', '.join(strong_tickers) or 'none'}")

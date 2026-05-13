@@ -33,14 +33,7 @@ class HermesCPSSignal(QCAlgorithm):
         self.pending_signal_price = {}    # ticker → close price at signal time
         self.pending_open_date = {}       # ticker → datetime when signal was set
         self._current_data = None
-        if config.BEAR_FILTER_ENABLED:
-            self._bear_sma = self.SMA(
-                config.TICKERS[0],
-                config.BEAR_FILTER_PERIOD,
-                Resolution.DAILY
-            )
-        else:
-            self._bear_sma = None
+        self._bear_sma = None  # created after add_equity below
 
         # FB subscribed only in equity mode for extended META pre-rename history
         subscribe = list(config.TICKERS)
@@ -50,6 +43,13 @@ class HermesCPSSignal(QCAlgorithm):
         for ticker in subscribe:
             equity = self.add_equity(ticker, Resolution.DAILY)
             equity.set_data_normalization_mode(DataNormalizationMode.ADJUSTED)
+
+            if config.BEAR_FILTER_ENABLED and ticker == config.TICKERS[0]:
+                self._bear_sma = self.SMA(
+                    config.TICKERS[0],
+                    config.BEAR_FILTER_PERIOD,
+                    Resolution.DAILY
+                )
 
             if config.INSTRUMENT == "options" and ticker in config.TICKERS:
                 option = self.add_option(ticker, Resolution.DAILY)

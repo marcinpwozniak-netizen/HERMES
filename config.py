@@ -45,5 +45,5 @@ STOCH_SMOOTH_K    = 3           # StochRSI — K smooth           (weekly: 5)
 STOCH_SMOOTH_D    = 3           # StochRSI — D smooth           (weekly: 5)
 
 # ── Bear market filter ────────────────────────────────────────────────
-BEAR_FILTER_ENABLED = True      # Block new CPS entries when SPY < SMA(BEAR_FILTER_PERIOD)
+BEAR_FILTER_ENABLED = False      # Block new CPS entries when SPY < SMA(BEAR_FILTER_PERIOD)
 BEAR_FILTER_PERIOD  = 200       # SMA period in daily bars

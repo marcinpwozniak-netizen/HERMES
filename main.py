@@ -33,9 +33,14 @@ class HermesCPSSignal(QCAlgorithm):
         self.pending_signal_price = {}    # ticker → close price at signal time
         self.pending_open_date = {}       # ticker → datetime when signal was set
         self._current_data = None
-        self._bear_sma_window = RollingWindow[float](config.BEAR_FILTER_PERIOD)
-        self._bear_sma_ready  = False
-        self._bear_sma_value  = 0.0
+        if config.BEAR_FILTER_ENABLED:
+            self._bear_sma = self.SMA(
+                config.TICKERS[0],
+                config.BEAR_FILTER_PERIOD,
+                Resolution.DAILY
+            )
+        else:
+            self._bear_sma = None
 
         # FB subscribed only in equity mode for extended META pre-rename history
         subscribe = list(config.TICKERS)
@@ -163,7 +168,7 @@ class HermesCPSSignal(QCAlgorithm):
             if self._is_bear_market():
                 self.debug(
                     f"[{ticker}] LONG signal blocked: bear market filter active "
-                    f"(spot < SMA{config.BEAR_FILTER_PERIOD} = {self._bear_sma_value:.2f})"
+                    f"(spot < SMA{config.BEAR_FILTER_PERIOD} = {self._bear_sma.Current.Value:.2f})"
                 )
             else:
                 self.pending_open[ticker] = True
@@ -193,18 +198,6 @@ class HermesCPSSignal(QCAlgorithm):
             return
 
         self._current_data = data
-
-        if config.BEAR_FILTER_ENABLED and not self.is_warming_up:
-            _ref = config.TICKERS[0]
-            if self._current_data is not None and _ref in self._current_data.bars:
-                _close = float(self._current_data.bars[_ref].close)
-                self._bear_sma_window.Add(_close)
-                if self._bear_sma_window.IsReady:
-                    self._bear_sma_ready = True
-                    self._bear_sma_value = (
-                        sum(self._bear_sma_window[i] for i in range(config.BEAR_FILTER_PERIOD))
-                        / config.BEAR_FILTER_PERIOD
-                    )
 
         for ticker in config.TICKERS:
             try:
@@ -380,15 +373,14 @@ class HermesCPSSignal(QCAlgorithm):
         return total
 
     def _is_bear_market(self):
-        """Returns True when the bear market filter is active and SPY < SMA200."""
-        if not config.BEAR_FILTER_ENABLED:
+        """Returns True when bear market filter is active and spot < SMA200."""
+        if not config.BEAR_FILTER_ENABLED or self._bear_sma is None:
             return False
-        if not self._bear_sma_ready:
+        if not self._bear_sma.IsReady:
             return False
-        ref = config.TICKERS[0]
         try:
-            spot = float(self.securities[ref].price)
-            return spot < self._bear_sma_value
+            spot = float(self.securities[config.TICKERS[0]].price)
+            return spot < self._bear_sma.Current.Value
         except Exception:
             return False
 

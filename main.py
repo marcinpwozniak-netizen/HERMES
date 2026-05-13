@@ -84,6 +84,14 @@ class HermesCPSSignal(QCAlgorithm):
                     "bar_count": 0,
                 }
 
+        if config.INSTRUMENT == "options":
+            # Pin risk: close ITM spreads before assignment
+            self.schedule.on(
+                self.date_rules.every_day(config.TICKERS[0]),
+                self.time_rules.before_market_close(config.TICKERS[0], 30),
+                self._check_pin_risk
+            )
+
     def _empty_options_pos(self):
         return {
             "contract": None, "expiry": None,
@@ -163,6 +171,9 @@ class HermesCPSSignal(QCAlgorithm):
         elif signal == "EXIT":
             if self.pending_open[ticker]:
                 self.pending_open[ticker] = False
+            # Close open CPS on EXIT signal if enabled
+            if has_open and config.CLOSE_ON_EXIT:
+                self._close_cps(ticker, "EXIT_SIGNAL")
 
     # ------------------------------------------------------------------ #
     # Daily on_data — options management only                             #
@@ -250,8 +261,19 @@ class HermesCPSSignal(QCAlgorithm):
         # Actual spread width (may differ from config.SPREAD_WIDTH if exact strike unavailable)
         actual_spread_width = short_strike - long_strike
 
-        if actual_spread_width < config.MIN_SPREAD_WIDTH:
-            self.debug(f"[{ticker}] Spread too narrow: {actual_spread_width} < {config.MIN_SPREAD_WIDTH}, skipping")
+        _sw_min = config.SPREAD_WIDTH - config.SPREAD_WIDTH_TOLERANCE
+        _sw_max = config.SPREAD_WIDTH + config.SPREAD_WIDTH_TOLERANCE
+        if actual_spread_width < _sw_min:
+            self.debug(
+                f"[{ticker}] Spread too narrow: {actual_spread_width} "
+                f"(accepted range {_sw_min}-{_sw_max}), skipping"
+            )
+            return False
+        if actual_spread_width > _sw_max:
+            self.debug(
+                f"[{ticker}] Spread too wide: {actual_spread_width} "
+                f"(accepted range {_sw_min}-{_sw_max}), skipping"
+            )
             return False
 
         # Position sizing based on actual spread width
@@ -384,6 +406,40 @@ class HermesCPSSignal(QCAlgorithm):
 
         if close_reason:
             self._close_cps(ticker, close_reason)
+
+    def _check_pin_risk(self):
+        """
+        Fires 30 min before market close every day.
+        - DTE == 0 (expiry day):  always close (prevent assignment at bell)
+        - DTE == 1 (day before):  close only if short put is ITM (spot < short_strike)
+        """
+        if config.INSTRUMENT != "options" or self.is_warming_up:
+            return
+
+        for ticker in config.TICKERS:
+            try:
+                pos = self.open_options.get(ticker, {})
+                if pos.get("contract") is None:
+                    continue
+
+                days_to_expiry = (pos["expiry"].date() - self.time.date()).days
+
+                if days_to_expiry == 0:
+                    self.debug(f"[{ticker}] PIN_RISK_0DTE: closing 30min before expiry close")
+                    self._close_cps(ticker, "PIN_RISK_0DTE")
+
+                elif days_to_expiry == 1:
+                    spot = float(self.securities[ticker].price)
+                    strike_short = pos.get("strike_short") or 0.0
+                    if spot < strike_short:
+                        self.debug(
+                            f"[{ticker}] PIN_RISK_1DTE: spot {spot:.2f} < short strike "
+                            f"{strike_short:.2f}, closing 30min before close"
+                        )
+                        self._close_cps(ticker, "PIN_RISK_1DTE")
+
+            except Exception as e:
+                self.debug(f"[{ticker}] _check_pin_risk error: {e}")
 
     def _close_cps(self, ticker, close_reason):
         pos = self.open_options[ticker]
@@ -557,7 +613,7 @@ class HermesCPSSignal(QCAlgorithm):
         self.log("=== DEDAL CPS STATS ===")
         self.log(
             "TICKER | TRADES | WIN_RATE | AVG_PCT_COLLECTED | AVG_PREMIUM | "
-            "PF | AVG_SPREAD | TP_closes | SL_closes | DTE_closes | EXPIRY_closes | PCR"
+            "PF | AVG_SPREAD | TP_closes | SL_closes | DTE_closes | EXPIRY_closes | PCR | EXIT_closes | PIN_closes"
         )
 
         total_trades = 0
@@ -573,7 +629,7 @@ class HermesCPSSignal(QCAlgorithm):
             n_trades = len(trades)
 
             if n_trades == 0:
-                self.log(f"{ticker} | 0 | N/A | N/A | N/A | N/A | N/A | 0 | 0 | 0 | 0 | N/A")
+                self.log(f"{ticker} | 0 | N/A | N/A | N/A | N/A | N/A | 0 | 0 | 0 | 0 | N/A | 0 | 0")
                 weak_tickers.append(ticker)
                 continue
 
@@ -597,6 +653,8 @@ class HermesCPSSignal(QCAlgorithm):
             sl_c  = sum(1 for t in trades if t["close_reason"] in ("SL", "DELTA_SL"))
             dte_c = sum(1 for t in trades if t["close_reason"] == "DTE")
             exp_c = sum(1 for t in trades if t["close_reason"] in ("EXPIRY", "EOA"))
+            exit_c = sum(1 for t in trades if t["close_reason"] == "EXIT_SIGNAL")
+            pin_c  = sum(1 for t in trades if t["close_reason"] in ("PIN_RISK_0DTE", "PIN_RISK_1DTE"))
 
             total_collected = sum(t.get("premium_collected") or 0 for t in trades)
             total_captured  = sum(t.get("premium_captured")  or 0 for t in trades)
@@ -605,7 +663,7 @@ class HermesCPSSignal(QCAlgorithm):
             self.log(
                 f"{ticker} | {n_trades} | {win_rate:.1f}% | {avg_pct:.1f}% | "
                 f"${avg_prem:.0f} | {pf_str} | {avg_spread:.1f} | "
-                f"{tp_c} | {sl_c} | {dte_c} | {exp_c} | {pcr:.1f}%"
+                f"{tp_c} | {sl_c} | {dte_c} | {exp_c} | {pcr:.1f}% | {exit_c} | {pin_c}"
             )
 
             total_trades += n_trades
